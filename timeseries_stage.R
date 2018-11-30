@@ -19,30 +19,43 @@ library(readxl)
 df <- read_excel("BICY Stage_Summary_JD.xlsx")
 df$date <- as.Date(df$date)
 
-# Get h_crit values
+# Get h_crit values (LiDAR)
 h_crit <- data.frame(site = c("RP1", "RP2", "TR1", "TR2", "TR3"),
-                     h_crit = c(0.48, 0.48, 0.66, 0.80, 0.96))
+                     h_crit = c(0.34, 0.44, 0.56, 0.72, 0.93),
+                     h_crit.hydro = c(0.49, 0.48, 0.67, 0.84, 0.96))
 
 # Determine if daily stage is above h_crit
 # also calculate "periods" of connectivity
 df <- df %>%
   left_join(h_crit) %>%
   na.omit() %>%
-  mutate(above = ifelse(wl_m >= h_crit, 1, 0)) %>%
+  mutate(above.lid = ifelse(wl_m >= h_crit, 1, 0),
+         above.hyd = ifelse(wl_m >= h_crit.hydro, 1, 0)) %>%
   group_by(site) %>%
-  mutate(period = cumsum(c(0, (diff(above) != 0 | diff(date) != 1)))) %>%
+  mutate(period.lid = cumsum(c(0, 
+                           (diff(above.lid) != 0 | 
+                              diff(date) != 1))
+                           ),
+         period.hyd = cumsum(c(0, 
+                               (diff(above.hyd) != 0 | 
+                                  diff(date) != 1))
+                             )
+         ) %>%
   ungroup()
 
 # Calculate number of wetlands connected over time
 wet_conn_count <- df %>%
   group_by(date) %>%
-  summarize(wet.no = sum(above))
+  summarize(wet.no.lid = sum(above.lid),
+            wet.no.hyd = sum(above.hyd))
 
 # Calculate number of periods of connectivity, by year
 connects <- df %>%
   mutate(year = year(date)) %>%
   group_by(site, year) %>%
-  summarize(pds = max(period))
+  summarize(pds.lid = max(period.lid),
+            pds.hyd = max(period.hyd)) %>%
+  gather(key = "period.type", value = "period", -year, -site)
             
 connects <- df %>%
   mutate(year = year(date)) %>%
@@ -54,7 +67,10 @@ connects <- df %>%
 # Calculate frequency of connectivity
 h_crit_sum <- df %>%
   na.omit() %>%
-  group_by(site) %>%
+  dplyr::select(site, above.lid, above.hyd) %>%
+  gather(key = "above.type", value = "above", 
+         -site) %>%
+  group_by(site, above.type) %>%
   summarize(freq = sum(above) / n())
 
 # Reorder levels so that TR sites come first
@@ -112,8 +128,11 @@ p <- ggplot() +
 p
 
 ggsave(plot = p, 
-       "stage_timeseries_bp_for_hcrit.tiff",
+       "stage_timeseries_bp_for_hcrit_lidar.tiff",
        device = "tiff",
+       width = 6,
+       height = 4,
+       units = "in",
        dpi = 600)
 
 # Read in canal discharge data

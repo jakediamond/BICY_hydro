@@ -5,8 +5,8 @@
 # 
 
 # Set Working Directory
-# setwd("C:/Users/diamo/Dropbox/Projects/Big Cypress ET/HydroData")
-setwd("E:/Dropbox/Dropbox/Projects/Big Cypress ET/HydroData")
+setwd("C:/Users/diamo/Dropbox/Projects/Big Cypress ET/HydroData")
+# setwd("E:/Dropbox/Dropbox/Projects/Big Cypress ET/HydroData")
 
 # Load libraries
 library(dplyr)
@@ -124,7 +124,8 @@ levels(bp2$in_type) <- c("Uncorrected",
                          "Volumetric")
 
 # Get lidar spill elevations
-lid <- read.csv("lidar_spill_elev.csv")
+lid <- data.frame(site = c("RP1", "RP2", "TR1", "TR2", "TR3"),
+                       h_crit = c(0.34, 0.44, 0.56, 0.72, 0.93))
 
 # Pick site for the progression
 sit <- "TR2"
@@ -163,14 +164,58 @@ mods <- rr %>%
 text_fun <- function(data){
   a <- format(data$estimate[1], digits = 3)
   b <- format(data$estimate[2], digits = 3)
-  eqn <- paste("y = ", a, "*exp(", b, "*x)", sep = "")
+  eqn <- paste("y==", a, "*e^{", b, "*x}", sep = "")
   data.frame(eqn = eqn)
 }
 
 # get equations
 eqns <- mods %>%
   group_by(Site) %>%
-  do(text_fun(.))
+  do(text_fun(.)) %>%
+  ungroup() %>%
+  mutate(x = c(0,0,0,0,0,0),
+         y = c(0.9, 0.9, 0, 0.9, 0.9, 0.9))
+
+# Plot all RR for supplemental material
+p_rr_sup <- ggplot(data =rr,  
+                   aes(x = AverageStage, 
+                       y = RainRise)) +
+  geom_point(shape = 16,
+             size = 1) + 
+  facet_wrap(~Site) +
+  theme_bw() + 
+  geom_line(stat = "smooth",
+            method = "nls", 
+            formula = (y ~ a * exp(b * x)), 
+            method.args = list(start = c(a = 0.4,
+                                         b = 0.4)),
+            se = FALSE, 
+            linetype = 1,
+            alpha = 0.8,
+            color = "blue") +
+  geom_text(data = eqns, 
+            aes(x = x, y = y, label = eqn),
+            parse = TRUE,
+            size = 2) +
+  xlab("Stage (m)") + 
+  ylab("Rain:Rise") +  
+  scale_x_continuous(limits = c(-0.25, 1),
+                     breaks = seq(0, 1, 0.5)) +
+  scale_y_continuous(limits = c(0, 1),
+                     breaks = c(0, 0.5, 1)) +
+  theme(axis.line = element_line(colour = "black"), 
+        # axis.text = element_text(size = 6),
+        # axis.title = element_text(size = 6),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = NA)) 
+
+ggsave(plot = p_rr_sup,
+       filename = "rain_raise_supplemental.tiff",
+       device = "tiff",
+       dpi = 300)
 
 # Plot rain rise inset
 inset_sy <- ggplot(dplyr::filter(rr, Site == sit), 
@@ -202,8 +247,6 @@ inset_sy <- ggplot(dplyr::filter(rr, Site == sit),
         panel.background = element_rect(fill = "transparent",colour = NA),
         plot.background = element_rect(fill = "transparent",colour = NA)) 
 
-inset_sy
-
 # Plot stage-area inset
 inset_sa <- ggplot(dplyr::filter(sa, site == sit), 
                    aes(x = stage_m, y = area_m2 / 10000)) +
@@ -223,8 +266,6 @@ inset_sa <- ggplot(dplyr::filter(sa, site == sit),
         panel.border = element_blank(),
         panel.background = element_rect(fill = "transparent",colour = NA),
         plot.background = element_rect(fill = "transparent",colour = NA)) 
-
-inset_sa
 
 # Get rid of some outliers to make plotting cleaner for TR2
 df_t.c <- df_t %>%
@@ -255,7 +296,7 @@ prog <- ggplot(data = dplyr::filter(df_t.c,
                  linetype = in_type)) +
   geom_vline(data = dplyr::filter(lid,
                                    site == sit),
-             aes(xintercept = spill_elev_lidar_m),
+             aes(xintercept = h_crit),
              color = "grey") +
   scale_linetype_manual(name = "Connectivity threshold",
                         breaks = c("Uncorrected",
@@ -279,8 +320,7 @@ prog <- ggplot(data = dplyr::filter(df_t.c,
              size = 1,
              linetype = "dashed") 
 
-prog
-
+# Full plot
 prog_full <- ggdraw() +
   draw_plot(prog) +
   draw_plot(inset_sy, 
@@ -295,7 +335,6 @@ prog_full <- ggdraw() +
             width = 0.2,
             height = 0.3,
             scale = 0.8)
-# prog_full
 
 # Save plot
 ggsave(plot = prog_full, 
@@ -317,6 +356,24 @@ df$site <- factor(df$site,
                   levels = c("TR1", "TR2", "TR3", 
                      "RP1", "RP2", "RP3"))
 
+# Get min values of flow above breakpoint for labels in plot
+loess_mins <- bp2 %>%
+  dplyr::filter(term == "breakpoint", 
+                in_type == "Volumetric") %>%
+  dplyr::select(site, estimate) %>%
+  right_join(df) %>%
+  mutate(above = ifelse(stage_m >= estimate, 1, 0)) %>%
+  dplyr::filter(rain == 0,
+         site != "RP3",
+         above == 1) %>%
+  group_by(site) %>%
+  summarize(qmax = paste("Q[max]==",
+                      round(min(inflow_m3.d, na.rm = T), 0),
+                      sep = "")) %>%
+  ungroup() %>%
+  mutate(x = c(0.73, 1.27, 1.3, 0.22, 0.55),
+         y = c(-320, -300, -240, -75, -220))
+
 # Plot the loess of stage-volume
 p_loess_vol <- ggplot(data = dplyr::filter(df, 
                                            rain == 0,
@@ -332,7 +389,7 @@ p_loess_vol <- ggplot(data = dplyr::filter(df,
   scale_y_continuous(labels = comma) +
   scale_x_continuous(limits = c(0, 1.5),
                      expand = c(0,0)) +
-  coord_cartesian(ylim = c(-250, 80)) +
+  coord_cartesian(ylim = c(-350, 80)) +
   geom_smooth(aes(color = site),
               method = "loess",
               se = FALSE) +
@@ -343,6 +400,12 @@ p_loess_vol <- ggplot(data = dplyr::filter(df,
              aes(xintercept = estimate,
                  colour = site),
              linetype = "dashed") +
+  geom_text(data = loess_mins,
+            aes(x = x,
+                y = y,
+                label = qmax,
+                color = site),
+            parse = TRUE) +
   theme(legend.position = "none",
         legend.background = element_rect(
           colour = "black",
@@ -354,8 +417,6 @@ p_loess_vol <- ggplot(data = dplyr::filter(df,
   geom_hline(yintercept = 0, 
              size = 1, 
              linetype = "solid") 
-
-p_loess_vol
 
 # Same plot but for corrected, non-volume inflow
 p_loess_cor <- ggplot(data = dplyr::filter(df, 
@@ -394,14 +455,14 @@ p_loess_cor <- ggplot(data = dplyr::filter(df,
              size = 1, 
              linetype = "solid") 
 
-p_loess_cor
-
+# Full plot
 p_loess_full <- plot_grid(p_loess_cor,
                           p_loess_vol,
                           labels = c("A", "B"))
 
+# Save plot
 ggsave(plot = p_loess_full, 
-       paste("loess_full_limit_", 
+       paste("loess_full_limit_notes_", 
              Sys.Date(), 
              ".tiff", 
              sep = ""),
@@ -412,16 +473,22 @@ ggsave(plot = p_loess_full,
        dpi = 600)
 
 # Calculate cumulative inflows
+# Nest data
 df_cume_stage_all <- df %>%
-  mutate(flow_type = ifelse(inflow_m3.d > 0, "Inflow", "Outflow")) %>%
+  mutate(flow_type = ifelse(inflow_m3.d > 0, 
+                            "Inflow", 
+                            "Outflow")) %>%
   group_by(site, flow_type) %>%
   arrange(stage_m) %>%
   dplyr::filter(!(is.na(inflow_m3.d))) %>%
   nest() %>%
   mutate(rain_type = "all")
 
+# Nested no-rain data
 df_cume_stage_norain <- df %>%
-  mutate(flow_type = ifelse(inflow_m3.d > 0, "Inflow", "Outflow")) %>%
+  mutate(flow_type = ifelse(inflow_m3.d > 0, 
+                            "Inflow", 
+                            "Outflow")) %>%
   dplyr::filter(rain == 0) %>%
   group_by(site, flow_type) %>%
   arrange(stage_m) %>%
@@ -429,16 +496,22 @@ df_cume_stage_norain <- df %>%
   nest() %>%
   mutate(rain_type = "no rain")
 
-df_cume_stage <- bind_rows(df_cume_stage_all, df_cume_stage_norain) %>%
+# All data together, unnested
+df_cume_stage <- bind_rows(df_cume_stage_all, 
+                           df_cume_stage_norain) %>%
   mutate(cume_flow = map(data, 
                          ~cumsum(.$inflow_m3.d))) %>%
   unnest()
 
-# Determine ecdf of stage by site
-df_ecdf <- df %>%
+# Load in complete stage data, not just days with flows
+df_stage <- read_excel("BICY Stage_Summary_JD.xlsx")
+df_stage$date <- as.Date(df_stage$date)
+
+# Determine ecdf of stage by site, but want to use all stage data
+df_ecdf <- df_stage %>%
   group_by(site) %>%
-  arrange(stage_m) %>%
-  mutate(cumestage = cume_dist(stage_m))
+  arrange(wl_m) %>%
+  mutate(cumestage = cume_dist(wl_m))
 
 # Quick calculation of cumulative flows
 cume_stages <- df_cume_stage %>%
@@ -446,11 +519,15 @@ cume_stages <- df_cume_stage %>%
   summarize(maxcume = max(abs(cume_flow)))
 
 cume_stages <- bp2 %>%
-  dplyr::filter(term == "breakpoint", in_type == "Volumetric") %>%
+  dplyr::filter(term == "breakpoint", 
+                in_type == "Volumetric") %>%
   dplyr::select(site, estimate) %>%
   right_join(df_cume_stage) %>%
   group_by(site, flow_type) %>%
-  summarize(cume_flow_bp = abs(nth(cume_flow, which.min(abs(stage_m - estimate))))) %>%
+  summarize(cume_flow_bp = abs(nth(cume_flow, 
+                                   which.min(abs(stage_m -
+                                                   estimate))))
+            ) %>%
   right_join(cume_stages) %>%
   mutate(percent_above = 1 - cume_flow_bp / maxcume)
 
@@ -472,7 +549,7 @@ bp_p <- as.numeric(bp2[bp2$site == s &
                          bp2$term == "breakpoint" &
                          bp2$in_type == "Volumetric", "estimate"])
 ec_p <- df_ecdf[df_ecdf$site == s, ]
-ec_p <- as.numeric(ec_p[which.min(abs(ec_p$stage_m - bp_p)), "cumestage"])
+ec_p <- as.numeric(ec_p[which.min(abs(ec_p$wl_m - bp_p)), "cumestage"])
 maxs_p <- max(df[df$site == s, "stage_m"])
 mins_p <- min(df[df$site == s, "stage_m"])
 
@@ -533,7 +610,7 @@ p1_top <- ggplot(data = dplyr::filter(df_cume_stage,
 # Plot for stage exceedance
 p1_bot <- ggplot(data = subset(df_ecdf,
                                    site == s)) + 
-  geom_line(aes(x = stage_m,
+  geom_line(aes(x = wl_m,
                 y = cumestage)) + 
   theme_classic() + 
   scale_y_continuous(limits = c(0, 1),
@@ -622,7 +699,7 @@ p1_all <- ggarrange(p1_TR1,
                     heights = c(1, 1))
 p1_all
 
-ggsave(plot = p1_all, "cumulative_flow_vs_stage_pooled_ecdf_legend2_alldays.tiff",
+ggsave(plot = p1_all, "cumulative_flow_vs_stage_pooled_ecdf_legend2_alldays_allstagedata.tiff",
        device = "tiff",
        width = 8,
        height = 6,
