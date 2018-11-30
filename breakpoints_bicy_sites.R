@@ -5,8 +5,8 @@
 # 
 
 # Set Working Directory
-setwd("C:/Users/diamo/Dropbox/Projects/Big Cypress ET/HydroData")
-# setwd("E:/Dropbox/Dropbox/Projects/Big Cypress ET/HydroData")
+# setwd("C:/Users/diamo/Dropbox/Projects/Big Cypress ET/HydroData")
+setwd("E:/Dropbox/Dropbox/Projects/Big Cypress ET/HydroData")
 
 # Load libraries
 library(dplyr)

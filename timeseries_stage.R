@@ -80,16 +80,17 @@ p <- ggplot() +
                 y = wl_m,
                 color = site,
                 group = interaction(site, above, period)),
-            linetype = "dotted") +
-  geom_text(data = h_crit_sum,
-            aes(x = as.Date("01-01-2016", format = "%m-%d-%Y"),
-                y = c(-0.22, -0.40, -0.58, -0.76, -0.94),
-                color = site,
-                label = paste("h >= h[crit]:", 
-                              round(freq, digits = 3)*100,
-                              "*\'%\'")),
-            parse = TRUE,
-            show.legend = FALSE) +
+            linetype = "solid",
+            size = 1.2) +
+  # geom_text(data = h_crit_sum,
+  #           aes(x = as.Date("01-01-2016", format = "%m-%d-%Y"),
+  #               y = c(-0.22, -0.40, -0.58, -0.76, -0.94),
+  #               color = site,
+  #               label = paste("h >= h[crit]:", 
+  #                             round(freq, digits = 3)*100,
+  #                             "*\'%\'")),
+  #           parse = TRUE,
+  #           show.legend = FALSE) +
   theme_classic() +
   xlab("") +
   ylab("Wetland stage (m)") +
@@ -101,7 +102,7 @@ p <- ggplot() +
                date_labels = "%b-%Y") +
   geom_hline(yintercept = 0, linetype = "dashed") +
   theme(
-    legend.position = c(0.09, 0.25),
+    legend.position = c(0.09, 0.27),
     legend.background = element_rect(colour = "black",
                                      fill = "gray90"),
     legend.key = element_rect(fill = "white",
@@ -126,6 +127,18 @@ df_canal <- read_excel("hydrologic data_canals.xlsx",
 df_canal <- df_canal %>%
   rename(site = StationID, date = Date, flow.cfs = `Discharge (cfs)`) %>%
   transmute(site, date = as.Date(date), flow = flow.cfs * 0.028)
+
+# Calculate the total canal flow when wetlands are connected
+canal_connect <- wet_conn_count %>%
+  filter(wet.no > 0) %>%
+  left_join(df_canal, by = "date") %>%
+  summarize(no.days = n(),
+            flowsum = sum(flow, na.rm = TRUE))
+
+canal_summary <- df_canal %>%
+  filter(date >= min(df$date), date <= max(df$date)) %>%
+  summarize(day.frac = canal_connect$no.days / n(),
+            flow.frac = canal_connect$flowsum / sum(flow, na.rm = TRUE))
 
 # Plot data for same time as wetland stage data
 date_range <- c(min(df$date), max(df$date))
